@@ -2,7 +2,7 @@
 # Copyright 2017-2023, Phil Karn, KA9Q
 
 # for production
-DOPTS = -DNDEBUG=1 -O3
+DOPTS = -DNDEBUG=1 -O3 -march=skylake -mtune=skylake
 
 # for debugging
 #DOPTS=-g
@@ -126,8 +126,8 @@ powers: powers.o dump.o libradio.a
 pl: pl.o libradio.a
 	$(CC) $(LDOPTS) -o $@ $^ -lfftw3f_threads -lfftw3f -lbsd -lm -lpthread
 
-radiod: main.o audio.o fm.o wfm.o linear.o spectrum.o radio.o rtcp.o radio_status.o modes.o rx888.o airspy.o airspyhf.o funcube.o rtlsdr.o sig_gen.o ezusb.o libfcd.a libradio.a
-	$(CC) $(LDOPTS) -o $@ $^ -lavahi-client -lavahi-common -lfftw3f_threads -lfftw3f -liniparser -lairspy -lairspyhf -lrtlsdr -lportaudio -lusb-1.0 -lbsd -lm -lpthread
+radiod: main.o audio.o fm.o wfm.o linear.o spectrum.o radio.o rtcp.o radio_status.o modes.o rx888.o airspy.o airspyhf.o funcube.o rtlsdr.o bladerf.o sig_gen.o ezusb.o libfcd.a libradio.a
+	$(CC) $(LDOPTS) -o $@ $^ -lavahi-client -lavahi-common -lfftw3f_threads -lfftw3f -liniparser -lairspy -lairspyhf -lrtlsdr -lbladeRF -lportaudio -lusb-1.0 -lbsd -lm -lpthread
 
 rdsd: rdsd.o libradio.a
 	$(CC) $(LDOPTS) -o $@ $^ -lavahi-client -lavahi-common -lfftw3f_threads -lfftw3f -lbsd -lm -lpthread

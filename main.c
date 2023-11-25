@@ -116,6 +116,11 @@ int rtlsdr_setup(struct frontend *,dictionary *,char const *);
 int rtlsdr_startup(struct frontend *);
 double rtlsdr_tune(struct frontend *,double);
 
+// In bladerf.c:
+int bladerf_setup(struct frontend *,dictionary *,char const *);
+int bladerf_startup(struct frontend *);
+double bladerf_tune(struct frontend *,double);
+
 // In sig_gen.c:
 int sig_gen_setup(struct frontend *,dictionary *,char const *);
 int sig_gen_startup(struct frontend *);
@@ -603,6 +608,10 @@ static int setup_hardware(char const *sname){
     Frontend.setup = rtlsdr_setup;
     Frontend.start = rtlsdr_startup;
     Frontend.tune = rtlsdr_tune;
+  } else if(strcasecmp(device,"bladerf") == 0){
+    Frontend.setup = bladerf_setup;
+    Frontend.start = bladerf_startup;
+    Frontend.tune = bladerf_tune;
   } else if(strcasecmp(device,"sig_gen") == 0){
     Frontend.setup = sig_gen_setup;
     Frontend.start = sig_gen_startup;
