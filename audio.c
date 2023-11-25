@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <errno.h>
 
 #include "misc.h"
 #include "multicast.h"
@@ -81,8 +82,11 @@ int send_output(struct channel * restrict const chan,float const * restrict buff
     int r = send(chan->output.data_fd,&packet,dp - packet,0);
     chan->output.samples += chunk * chan->output.channels; // Count frames
     if(r <= 0){
-      perror("pcm send");
-      return -1;
+      fprintf(stderr, "%.lf pcm send error %d %s fpp: %d\n",
+		      chan->tune.freq, errno, strerror(errno), frames_per_pkt);
+      if (errno == EAGAIN)
+	      r = 0;
+      return r;
     }
     frames -= chunk;
     if(chan->output.pacing && frames > 0)
