@@ -23,6 +23,7 @@
 #include <sys/mman.h>
 #include <sched.h>
 #include <errno.h>
+#include <locale.h>
 
 #ifndef NULL
 #define NULL ((void *)0)
@@ -256,6 +257,7 @@ char *ftime(char * result,int size,int64_t t){
 // If no g/m/k and number is too small, make a heuristic guess
 // NB! This assumes radio covers 100 kHz - 2 GHz; should make more general
 double parse_frequency(char const *s,bool heuristics){
+  char point = localeconv()->decimal_point[0];
   char * const ss = alloca(strlen(s)+1);
   {
     int i;
@@ -269,14 +271,14 @@ double parse_frequency(char const *s,bool heuristics){
   char *sp = NULL;
   if((sp = strchr(ss,'g')) != NULL){
     mult = 1e9;
-    *sp = '.';
+    *sp = point;
   } else if((sp = strchr(ss,'m')) != NULL){
     mult = 1e6;
-    *sp = '.';
+    *sp = point;
   } else if((sp = strchr(ss,'k')) != NULL){
     mult = 1e3;
-    *sp = '.';
-  } else if((sp = strchr(ss,'.')) != NULL){ // note explicit radix point
+    *sp = point;
+  } else if ((sp = strchr(ss, point)) != NULL) { // note explicit radix point
   }
   char *endptr = NULL;
   double f = strtod(ss,&endptr);
