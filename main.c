@@ -615,7 +615,7 @@ static int setup_hardware(char const *sname){
     Frontend.setup = airspy_setup;
     Frontend.start = airspy_startup;
     Frontend.tune = airspy_tune;
-  } else if(strcasecmp(device,"airspyhf") == 0){
+  } else if(0 && strcasecmp(device,"airspyhf") == 0){
     Frontend.setup = airspyhf_setup;
     Frontend.start = airspyhf_startup;
     Frontend.tune = airspyhf_tune;
