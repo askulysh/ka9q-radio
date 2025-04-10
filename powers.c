@@ -207,8 +207,14 @@ int main(int argc,char *argv[]){
     // date, time, start_frequency, stop_frequency, bin_size_hz, number_bins, data0, data1, data2
 
     // **************Process here ***************
-    char gps[1024];
-    printf("%s,",format_gpstime_iso8601(gps,sizeof(gps),time));
+    lldiv_t ut = lldiv(time,BILLION);
+
+    time_t utime = ut.quot - GPS_UTC_OFFSET + UNIX_EPOCH;
+    struct tm tm;
+    gmtime_r(&utime, &tm);
+    printf("%4d-%02d-%02d, %02d:%02d:%02d,",
+	   tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,
+	   tm.tm_hour, tm.tm_min, tm.tm_sec);
 
     // Frequencies below center; note integer round-up, e.g, 65 -> 33; 64 -> 32
     // npower odd: emit N/2+1....N-1 0....N/2 (division truncating to integer)
@@ -246,10 +252,10 @@ int main(int argc,char *argv[]){
       }
     } else {
       for(int i= first_neg_bin; i < npower; i++)
-        printf(", %.2f",(powers[i] == 0) ? min_db : power2dB(powers[i]));
+        printf(", %.3f",(powers[i] == 0) ? min_db : power2dB(powers[i]));
       // Frequencies above center
       for(int i=0; i < first_neg_bin; i++)
-        printf(", %.2f",(powers[i] == 0) ? min_db : power2dB(powers[i]));
+        printf(", %.3f",(powers[i] == 0) ? min_db : power2dB(powers[i]));
     }
     printf("\n");
     if(--count == 0)
