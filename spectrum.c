@@ -15,6 +15,8 @@
 #include "filter.h"
 #include "radio.h"
 
+#define SPECTRUM_DEBUG 1
+
 static float const SPECTRUM_KAISER_BETA = 5.0;
 
 // Spectrum analysis thread
@@ -106,7 +108,7 @@ int demod_spectrum(void *arg){
 
 	chan->filter.max_IF = (bin_count * bin_bw)/2;
 	chan->filter.min_IF = -chan->filter.max_IF;
-	power_buffer = malloc((input_bins + 10) * sizeof *power_buffer);
+	power_buffer = malloc((input_bins + 100) * sizeof *power_buffer);
 	create_filter_output(&chan->filter.out,&Frontend.in,NULL,0,SPECTRUM);
 	// Compute power (not amplitude) scale factor
 	gain = 1.0f / (float) N;   // scale each bin value for our FFT
@@ -244,7 +246,7 @@ int demod_spectrum(void *arg){
 	assert(actual_bin_count >= bin_count);
 
 #if SPECTRUM_DEBUG
-	fprintf(stdout,"spectrum creating IQ/FFT channel, requested bw = %.1f bin_count = %d, actual bin count %d samprate %f frame len %d\n",
+	fprintf(stdout,"spectrum creating IQ/FFT channel, requested bw = %.1f bin_count = %d, actual bin count %d samprate %u frame len %d\n",
 		bin_bw,bin_count,actual_bin_count,samprate,frame_len);
 #endif
 	chan->filter.min_IF = -samprate/2 + 200;
