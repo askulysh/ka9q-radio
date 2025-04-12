@@ -59,7 +59,7 @@ int main(int argc,char *argv[]){
   App_path = argv[0];
   int count = 1;     // Number of updates. -1 means infinite
   float interval = 5; // Period between updates, sec
-  float frequency = -1;
+  double frequency = -1;
   int bins = 0;
   float bin_bw = 0;
   float tc = 0;
@@ -147,7 +147,7 @@ int main(int argc,char *argv[]){
     encode_int(&bp,COMMAND_TAG,tag);
     encode_int(&bp,DEMOD_TYPE,SPECT_DEMOD);
     if(frequency >= 0)
-      encode_float(&bp,RADIO_FREQUENCY,frequency); // 0 frequency means terminate
+      encode_double(&bp,RADIO_FREQUENCY,frequency); // 0 frequency means terminate
     if(bins > 0)
       encode_int(&bp,BIN_COUNT,bins);
     if(bin_bw > 0)
