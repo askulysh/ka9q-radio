@@ -271,6 +271,7 @@ int fobos_setup(struct frontend *const frontend, dictionary *const dictionary,
 	return -1;
       }
       frontend->frequency = frequency_actual;
+      frontend->lock = true;
       frontend->min_IF = -0.47 * frontend->samprate;
       frontend->max_IF = 0.47 * frontend->samprate;
 
@@ -452,6 +453,8 @@ double fobos_tune(struct frontend *const frontend, double const freq) {
   if(sdr->direct_sampling)
     return 0.0; // No tuning in direct sample mode
 
+  if (frontend->lock)
+    return frontend->frequency;
 
   fprintf(stdout, "Trying to tune to: %f\n", freq);
   double frequency_actual = 0.0;
