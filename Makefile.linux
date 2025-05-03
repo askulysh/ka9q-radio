@@ -179,6 +179,9 @@ opussend: opussend.o libradio.a
 packetd: packetd.o libradio.a
 	$(CC) $(LDOPTS) -o $@ $^ -lfftw3f_threads -lfftw3f -lbsd -lm -lpthread
 
+rtl_tcp_emu: rtl_tcp_emu.o libradio.a
+	$(CC) $(LDOPTS) -o $@ $^ -lbsd -lm -lpthread
+
 pcmcat: pcmcat.o libradio.a
 	$(CC) $(LDOPTS) -o $@ $^ -lbsd -lm -lpthread
 
