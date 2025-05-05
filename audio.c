@@ -137,6 +137,9 @@ int flush_output(struct channel * chan,bool marker,bool complete){
   case OPUS:
     max_frames_per_pkt = INT_MAX; // No real limit
     break;
+  case U8:
+    max_frames_per_pkt = BYTES_PER_PKT / (sizeof(uint8_t) * chan->output.channels);
+    break;
   }
   if(min_frames_per_pkt > max_frames_per_pkt)
     min_frames_per_pkt = max_frames_per_pkt;
@@ -358,6 +361,16 @@ int flush_output(struct channel * chan,bool marker,bool complete){
 	  bytes = 0; // Suppress frame, but still increment timestamp
 
 	chan->output.rtp.timestamp += chunk * 48000 / chan->output.samprate; // Always increases at 48 kHz
+      }
+      break;
+    case U8:
+      {
+	uint8_t *pcm_buf = (uint8_t *)dp;
+	for(unsigned int i=0; i < chunk * chan->output.channels; i++)
+	  *pcm_buf++ = 127 + scaleclip(buf[i]) / 256;
+
+	chan->output.rtp.timestamp += chunk;
+	bytes = chunk * chan->output.channels * sizeof(*pcm_buf);
       }
       break;
     default:

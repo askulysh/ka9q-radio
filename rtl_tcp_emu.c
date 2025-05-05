@@ -67,7 +67,7 @@ struct command
         unsigned int param;
 }__attribute__((packed));
 
-static void sighandler(int signum)
+static void sighandler(int)
 {
         fprintf(stderr, "Signal caught, exiting!\n");
 	keep = 0;
@@ -113,10 +113,14 @@ static int tcp_server()
 
 	if (bind(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr))) {
 		perror("socket bind failed...\n");
+		close(sockfd);
+
 		return -1;
 	}
 	if (listen(sockfd, 5) != 0) {
 		perror("Listen failed...\n");
+		close(sockfd);
+
 		return -1;
 	}
 
@@ -261,7 +265,7 @@ static void *command_worker(void *)
 			encode_int(&bp, COMMAND_TAG, arc4random());
 			encode_int(&bp, OUTPUT_SSRC, Ssrc);
 			encode_string(&bp, PRESET, "rmd_iq", 6);
-			encode_int(&bp, OUTPUT_ENCODING, S16LE);
+			encode_int(&bp, OUTPUT_ENCODING, U8);
 			encode_int(&bp, AGC_ENABLE, 1);
 			encode_double(&bp, RADIO_FREQUENCY, freq);
 			encode_int(&bp, OUTPUT_SAMPRATE, samp_rate);
@@ -297,7 +301,6 @@ int data_worker(int Input_fd, int output)
 		struct sockaddr sender;
 		socklen_t socksize = sizeof(sender);
 		uint8_t buffer[PKTSIZE];
-		uint8_t out[PKTSIZE];
 
 		// Gets all packets to multicast destination address,
 		// regardless of sender IP, sender port, dest port, ssrc
@@ -397,10 +400,7 @@ int data_worker(int Input_fd, int output)
 				goto done;
 			}
 		}
-		int16_t *in = (int16_t*)dp;
-		for (int i=0;i<size/2;i++)
-			out[i] = 127+in[i]/256;
-		int r = send(output, out, size/2, 0);
+		int r = send(output, dp, size, 0);
 		if (r < 0) {
 			perror("write:");
 			return r;
@@ -463,6 +463,9 @@ int main(int argc,char *argv[])
 
 	int srv_sock = tcp_server();
 
+	if (srv_sock < 0)
+		return srv_sock;
+
 	cli_sock = accept_cli(srv_sock);
 
 	// Set up multicast input
@@ -475,6 +478,10 @@ int main(int argc,char *argv[])
 
 		return -1;
 	}
+
+	int n = 1 << 20; // 1 MB
+	if (setsockopt(Input_fd, SOL_SOCKET,SO_RCVBUF, &n,sizeof(n)) == -1)
+		perror("setsockopt");
 
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);

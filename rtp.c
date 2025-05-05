@@ -307,6 +307,8 @@ char const *encoding_string(enum encoding e){
     return "ax.25";
   case F16LE:
     return "f16le";
+  case U8:
+    return "u8";
   }
 }
 enum encoding parse_encoding(char const *str){
@@ -322,6 +324,8 @@ enum encoding parse_encoding(char const *str){
     return OPUS;
   else if(strcasecmp(str,"ax25") == 0 || strcasecmp(str,"ax.25") == 0)
     return AX25;
+  else if(strcasecmp(str,"u8") == 0)
+    return U8;
   else
     return NO_ENCODING;
 }
