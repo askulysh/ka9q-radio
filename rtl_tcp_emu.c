@@ -21,6 +21,8 @@
 #include <time.h>
 #include <sysexits.h>
 #include <signal.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include "misc.h"
 #include "multicast.h"
@@ -134,13 +136,14 @@ int accept_cli(int srv_sock)
 	unsigned int len;
 
 	len = sizeof(cli);
-	printf("listen...\n");
 	cli_sock = accept(srv_sock, (struct sockaddr *)&cli, &len);
 	if (cli_sock < 0) {
 		perror("server accept failed...\n");
 		return cli_sock;
 	} else {
-		printf("server accept the client...\n");
+		printf("incoming connection from %s\n",
+				inet_ntoa(cli.sin_addr));
+		fflush(NULL);
 	}
 
 	send_rtl_header(cli_sock);
@@ -220,12 +223,20 @@ static void *command_worker(void *)
 		uint32_t param = ntohl(cmd.param);
                 switch(cmd.cmd) {
                 case 0x01:
-                        printf("set freq %d\n", param);
-			if (param == 52000000)
+			if (param == 52000000 || param < 1000000) {
+				printf("invalid freq %d\n", param);
+				fflush(NULL);
 				continue;
+			}
+                        printf("set freq %d\n", param);
 			freq = param;
                         break;
                 case 0x02:
+			if (param > 5000000 || param < 10000) {
+				printf("invalid sample rate %d\n", param);
+				fflush(NULL);
+				continue;
+			}
                         printf("set sample rate %d\n", param);
 			samp_rate = param;
                         break;
@@ -259,6 +270,7 @@ static void *command_worker(void *)
                 default:
                         continue;
                 }
+		fflush(NULL);
 		if (freq != 0 && samp_rate != 0) {
 			uint8_t *bp = cmd_buffer;
 			*bp++ = 1; // Generate command packet
@@ -469,7 +481,9 @@ int main(int argc,char *argv[])
 	cli_sock = accept_cli(srv_sock);
 
 	// Set up multicast input
-	Input_fd = setup_mcast_in(Mcast_address_text, NULL, 0, 0);
+	struct sockaddr_in saddr;
+	Input_fd = setup_mcast_in(Mcast_address_text,
+			(struct sockaddr *)&saddr, 0, 0);
 	if (Input_fd == -1) {
 		fprintf(stderr,"Can't set up input from %s\n",
 				Mcast_address_text);
@@ -478,6 +492,9 @@ int main(int argc,char *argv[])
 
 		return -1;
 	}
+	printf("multicast input: %s\n",
+			inet_ntoa(saddr.sin_addr));
+	fflush(NULL);
 
 	int n = 1 << 20; // 1 MB
 	if (setsockopt(Input_fd, SOL_SOCKET,SO_RCVBUF, &n,sizeof(n)) == -1)
