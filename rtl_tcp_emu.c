@@ -1,10 +1,3 @@
-// THIS PROGRAM IS OBSOLETE - Use 'pcmrecord --stdout' instead
-
-// Receive and stream PCM RTP data to stdout
-// Should emit .wav format by default to encode sample rate & parameters for subsequent encoding
-// Revised Aug 2023 to more cleanly handle sender restarts
-// Copyright 2023 Phil Karn, KA9Q
-
 #define _GNU_SOURCE 1
 #include <assert.h>
 #include <pthread.h>
@@ -324,6 +317,8 @@ int data_worker(int Input_fd, int output)
 		}
 
 		if (size == -1) {
+			perror("recvmsg");
+			fflush(NULL);
 			if(errno != EINTR){ // Happens routinely
 				perror("recvmsg");
 				usleep(1000);
@@ -345,8 +340,12 @@ int data_worker(int Input_fd, int output)
 		if (size <= 0)
 			continue;
 
-		if (rtp.ssrc == 0 || (Ssrc != 0 && rtp.ssrc != Ssrc))
-			continue; // Ignore unwanted or invalid SSRCs
+		if (rtp.ssrc == 0 || (Ssrc != 0 && rtp.ssrc != Ssrc)) {
+			printf("not for us: %d\n", rtp.ssrc);
+			fflush(NULL);
+			// Ignore unwanted or invalid SSRCs
+			continue;
+		}
 
 		if (Pcmstream.ssrc == 0){
 			// First packet on stream, initialize
