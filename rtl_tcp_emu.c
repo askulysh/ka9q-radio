@@ -37,7 +37,7 @@ struct pcmstream {
 
 // Command line params
 static char const *Mcast_address_text;
-static int Quiet;
+static int Quiet = 0;
 const char *App_path;
 int Verbose;
 char const *Iface;
@@ -192,7 +192,7 @@ static void *command_worker(void *)
 		}
                 cmd.cmd = 0xff;
                 left=sizeof(cmd);
-                while(left >0) {
+                while (left > 0) {
                         FD_ZERO(&readfds);
                         FD_SET(cli_sock, &readfds);
                         tv.tv_sec = 1;

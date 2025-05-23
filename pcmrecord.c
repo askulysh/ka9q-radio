@@ -205,6 +205,11 @@ static struct session *Sessions;
 int Mcast_ttl;
 struct sockaddr Metadata_dest_socket;
 
+static uint32_t seq_1 = 0;
+static uint32_t seq_2 = 0;
+static uint32_t seq_64 = 0;
+static uint32_t errs = 0;
+
 static void closedown(int a);
 static void input_loop(void);
 static void cleanup(void);
@@ -725,8 +730,10 @@ static void input_loop(){
 	size -= dp[size-1];
 	rtp.pad = 0;
       }
-      if(size <= 0)
+      if(size <= 0) {
+	errs++;
 	goto datadone; // Bogus RTP header
+      }
 
       size -= (dp - buffer);
 
@@ -802,6 +809,7 @@ static void input_loop(){
       int16_t const seqdiff = rtp.seq - sp->rtp_state.seq;
 
       if(seqdiff < 0){
+	errs++;
 	// old, drop
 	if(Verbose > 1)
 	  fprintf(stderr,"ssrc %u drop old sequence %u timestamp %u bytes %d\n",rtp.ssrc,rtp.seq,rtp.timestamp,size);
@@ -811,6 +819,7 @@ static void input_loop(){
 	sp->rtp_state.odd_seq_set = true;
 	goto datadone;
       } else if(seqdiff >= RESEQ){
+	seq_64++;
 	// Give up waiting for the lost frame, flush what we have
 	// Could also be a restart, but treat it the same
 	if(Verbose > 1)
@@ -818,6 +827,10 @@ static void input_loop(){
 	send_queue(sp,true);
 	if(Verbose > 1)
 	  fprintf(stderr,"ssrc %u reset & queue sequence %u timestamp %u bytes %d\n",rtp.ssrc,rtp.seq,rtp.timestamp,size);
+      } else if (seqdiff == 0) {
+	      seq_1++;
+      } else {
+	      seq_2++;
       }
       if(Verbose > 2)
 	fprintf(stderr,"ssrc %u queue sequence %u timestamp %u bytes %d\n",rtp.ssrc,rtp.seq,rtp.timestamp,size);
@@ -880,6 +893,8 @@ static void input_loop(){
 
 
 static void cleanup(void){
+  fprintf(stderr, "%s: cleanup ok: %u [2-64]: %u 64+: %u  errs: %u\n",
+		  App_path, seq_1, seq_2, seq_64, errs);
   while(Sessions){
     // Flush and close each write stream
     // Be anal-retentive about freeing and clearing stuff even though we're about to exit
