@@ -908,7 +908,7 @@ static void *process_section(void *p){
     if(!freq_table[i].valid)
       continue;
 
-    uint32_t ssrc = lrint(freq_table[i].f / 1000.0); // Kilohertz
+    uint32_t ssrc = freq_table[i].f;
 
     struct channel *chan = NULL;
     // Try to create it, incrementing in case of collision

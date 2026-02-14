@@ -759,6 +759,8 @@ double parse_frequency(char const *s,bool heuristics){
   if(endptr == ss || f == 0)
     return 0; // Empty entry, or nothing decipherable
 
+  heuristics = false;
+
   if(!heuristics || sp != NULL || f >= 1e5) // If multiplier explicitly given, or frequency >= 100 kHz (lower limit), return as-is
     return f * mult;
 
