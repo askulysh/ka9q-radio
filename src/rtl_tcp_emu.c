@@ -22,6 +22,9 @@
 #include "rtp.h"
 #include "status.h"
 
+#define HAVE_DEST_SOCKET 1
+//#define HAVE_U8 1
+
 struct pcmstream {
   uint32_t ssrc;            // RTP Sending Source ID
   int type;                 // RTP type (10,11,20)
@@ -37,9 +40,9 @@ struct pcmstream {
 
 // Command line params
 static char const *Mcast_address_text;
-static int Quiet;
+static int Quiet = 0;
 const char *App_path;
-int Verbose;
+int Verbose = 0;
 char const *Iface;
 
 char const *Radio = NULL;
@@ -47,10 +50,11 @@ static int Input_fd = -1;
 static struct pcmstream Pcmstream;
 static struct sockaddr_in Control_address;
 static volatile int cli_sock = -1;
+struct sockaddr Destination_socket;
 
 static pthread_t command_thread;
 uint16_t port = 1234;
-static uint32_t Ssrc;
+static uint32_t Ssrc = 0;
 double freq = 0;
 int samp_rate = 0;
 int keep = 1;
@@ -62,7 +66,7 @@ struct command
         unsigned int param;
 }__attribute__((packed));
 
-static void sighandler(int )
+static void sighandler(int)
 {
         fprintf(stderr, "Signal caught, exiting!\n");
 	keep = 0;
@@ -108,10 +112,14 @@ static int tcp_server()
 
 	if (bind(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr))) {
 		perror("socket bind failed...\n");
+		close(sockfd);
+
 		return -1;
 	}
 	if (listen(sockfd, 5) != 0) {
 		perror("Listen failed...\n");
+		close(sockfd);
+
 		return -1;
 	}
 
@@ -140,7 +148,7 @@ int accept_cli(int srv_sock)
 	return cli_sock;
 }
 
-static void close_stream(int sock)
+void close_stream(int sock)
 {
 	uint8_t cmd_buffer[PKTSIZE];
 	uint8_t *bp = cmd_buffer;
@@ -204,7 +212,9 @@ static void *command_worker(void *)
                                 printf(
 		"comm recv r: %d receved: %d cli_sock: %d do_exit: %d\n",
 					r, received, cli_sock, do_exit);
-				close_stream(Control_sock);
+#ifdef HAVE_DEST_SOCKET
+//				close_stream(Control_sock);
+#endif
 
 				if (!keep)
 					return NULL;
@@ -272,12 +282,20 @@ static void *command_worker(void *)
 			encode_int(&bp, COMMAND_TAG, arc4random());
 			encode_int(&bp, OUTPUT_SSRC, Ssrc);
 			encode_string(&bp, PRESET, "rmd_iq", 6);
+#ifdef HAVE_U8
+			encode_int(&bp, OUTPUT_ENCODING, U8);
+#else
 			encode_int(&bp, OUTPUT_ENCODING, S16LE);
-			encode_int(&bp, AGC_ENABLE, 1);
+#endif
+			encode_bool(&bp, AGC_ENABLE, true);
 			encode_double(&bp, RADIO_FREQUENCY, freq);
 			encode_int(&bp, OUTPUT_SAMPRATE, samp_rate);
 			encode_float(&bp, LOW_EDGE,  -(int)samp_rate/2);
 			encode_float(&bp, HIGH_EDGE,  -(int)samp_rate/2);
+#ifdef HAVE_DEST_SOCKET
+			encode_socket(&bp,OUTPUT_DATA_DEST_SOCKET,
+						&Destination_socket);
+#endif
 			encode_eol(&bp);
 			int cmd_len = bp - cmd_buffer;
 			if (sendto(Control_sock, cmd_buffer, cmd_len, 0,
@@ -308,7 +326,6 @@ int data_worker(int Input_fd, int output)
 		struct sockaddr sender;
 		socklen_t socksize = sizeof(sender);
 		uint8_t buffer[PKTSIZE];
-		uint8_t out[PKTSIZE];
 
 		// Gets all packets to multicast destination address,
 		// regardless of sender IP, sender port, dest port, ssrc
@@ -414,10 +431,15 @@ int data_worker(int Input_fd, int output)
 				goto done;
 			}
 		}
+#ifdef HAVE_U8
+		int r = send(output, dp, size, 0);
+#else
+		uint8_t out[PKTSIZE];
 		int16_t *in = (int16_t*)dp;
 		for (int i=0;i<size/2;i++)
 			out[i] = 127+in[i]/256;
 		int r = send(output, out, size/2, 0);
+#endif
 		if (r < 0) {
 			perror("write:");
 			return r;
@@ -476,9 +498,17 @@ int main(int argc,char *argv[])
 		exit(1);
 	}
 
+	if (Ssrc == 0)
+		Ssrc = port;
+
 	Mcast_address_text = argv[optind];
+	resolve_mcast(Mcast_address_text, &Destination_socket,
+			DEFAULT_RTP_PORT, NULL, 0, 0);
 
 	int srv_sock = tcp_server();
+
+	if (srv_sock < 0)
+		return srv_sock;
 
 	cli_sock = accept_cli(srv_sock);
 
@@ -497,6 +527,10 @@ int main(int argc,char *argv[])
 	printf("multicast input: %s\n",
 			inet_ntoa(saddr.sin_addr));
 	fflush(NULL);
+
+	int n = 1 << 20; // 1 MB
+	if (setsockopt(Input_fd, SOL_SOCKET,SO_RCVBUF, &n,sizeof(n)) == -1)
+		perror("setsockopt");
 
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
