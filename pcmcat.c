@@ -20,6 +20,7 @@
 #include <netdb.h>
 #include <time.h>
 #include <sysexits.h>
+#include <linux/filter.h>
 
 #include "misc.h"
 #include "multicast.h"
@@ -51,6 +52,25 @@ static uint32_t Ssrc; // Requested SSRC
 
 static int init(struct pcmstream *pc,struct rtp_header const *rtp,struct sockaddr const *sender);
 
+// Attach a classic BPF filter that passes only datagrams whose RTP SSRC field
+// (bytes 8-11 of UDP payload) matches ssrc.
+// SO_ATTACH_FILTER on SOCK_DGRAM presents UDP header + payload to BPF, so the
+// RTP SSRC sits at offset 16: 8 (UDP header) + 8 (RTP fields before SSRC).
+static void attach_ssrc_bpf_filter(int fd, uint32_t ssrc){
+  struct sock_filter filter[] = {
+    BPF_STMT(BPF_LD  | BPF_W   | BPF_ABS, 16),         /* load 4 bytes at udp[8]+rtp[8] = RTP SSRC */
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,   ssrc, 0, 1), /* if match, fall through; else skip  */
+    BPF_STMT(BPF_RET | BPF_K,             0xFFFF),      /* accept                             */
+    BPF_STMT(BPF_RET | BPF_K,             0),           /* drop                               */
+  };
+  struct sock_fprog prog = {
+    .len    = sizeof(filter) / sizeof(filter[0]),
+    .filter = filter,
+  };
+  if(setsockopt(fd, SOL_SOCKET, SO_ATTACH_FILTER, &prog, sizeof(prog)) != 0)
+    perror("SO_ATTACH_FILTER");
+}
+
 int main(int argc,char *argv[]){
   App_path = argv[0];
   setlocale(LC_ALL,getenv("LANG"));
@@ -75,14 +95,18 @@ int main(int argc,char *argv[]){
       break;
     case 'h':
     default:
-      fprintf(stderr,"Usage: %s [-h] [-v] [-q] [-s ssrc] [-b 0|1] mcast_address\n",argv[0]);
+      fprintf(stderr,"Usage: %s [-h] [-v] [-q] -s ssrc [-b 0|1] mcast_address\n",argv[0]);
       fprintf(stderr,"       hex ssrc requires 0x prefix\n");
       exit(1);
     }
   }
   if(optind != argc-1){
     fprintf(stderr,"mcast_address not specified\n");
-      exit(1);
+    exit(EX_USAGE);
+  }
+  if(Ssrc == 0){
+    fprintf(stderr,"SSRC (-s) is required\n");
+    exit(EX_USAGE);
   }
   Mcast_address_text = argv[optind];
 
@@ -93,16 +117,16 @@ int main(int argc,char *argv[]){
 	    Mcast_address_text);
     exit(EX_USAGE);
   }
-
+  attach_ssrc_bpf_filter(Input_fd, Ssrc);
 
   // audio input thread
   // Receive audio multicasts, multiplex into sessions, send to output
-  // What do we do if we get different streams?? think about this
   while(true){
     struct sockaddr sender;
     socklen_t socksize = sizeof(sender);
     uint8_t buffer[PKTSIZE];
-    // Gets all packets to multicast destination address, regardless of sender IP, sender port, dest port, ssrc
+
+    // Gets all packets to multicast destination address, regardless of sender IP, sender port, dest port
     int size = recvfrom(Input_fd,buffer,sizeof(buffer),0,&sender,&socksize);
     if(size == -1){
       if(errno != EINTR){ // Happens routinely
@@ -126,9 +150,6 @@ int main(int argc,char *argv[]){
     if(size <= 0)
       continue;
 
-    if(rtp.ssrc == 0 || (Ssrc != 0 && rtp.ssrc != Ssrc))
-       continue; // Ignore unwanted or invalid SSRCs
-
     if(Pcmstream.ssrc == 0){
       // First packet on stream, initialize
       init(&Pcmstream,&rtp,&sender);
@@ -139,8 +160,7 @@ int main(int argc,char *argv[]){
 		Pcmstream.source,
 		rtp.type);
       }
-    } else if(rtp.ssrc != Pcmstream.ssrc)
-      continue; // unwanted SSRC, ignore
+    }
 
     if(!address_match(&sender,&Pcmstream.sender) || getportnumber(&Pcmstream.sender) != getportnumber(&sender)){
       // Source changed, the sender restarted

@@ -128,13 +128,19 @@ endif
 	systemctl daemon-reload
 
 clean:
-	-rm -f *.o *.a *.d *.so $(DAEMONS) $(EXECS) $(DYNAMIC_DRIVERS) $(STATIC_DRIVERS)
+	-rm -f *.o *.a *.d *.so $(DAEMONS) $(EXECS) $(DYNAMIC_DRIVERS) $(STATIC_DRIVERS) test_bpf_filter
+
+test_bpf_filter: test_bpf_filter.c rtp.c
+	$(CC) $(CFLAGS) -o $@ $^
+
+test: test_bpf_filter
+	./test_bpf_filter
 
 DEPS = $(CFILES:.c=.d)
 
 -include $(DEPS)
 
-.PHONY: clean all install pi dynamics
+.PHONY: clean all install pi dynamics test
 
 dynamics: $(DYNAMIC_DRIVERS)
 
