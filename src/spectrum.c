@@ -30,6 +30,23 @@ static void wideband_poll(struct channel *);
 static void rice(struct channel *);
 #endif
 
+static inline int spectrum_base_fft_index(int i, int fft_n, int bin_count)
+{
+  assert(bin_count > 0 && fft_n >= bin_count && i >= 0 && i < bin_count);
+  int const first_neg = (bin_count + 1) / 2;
+  if (i < first_neg)
+    return i;
+  return fft_n - bin_count + i;
+}
+
+static inline int wrap_fft_index(int idx, int fft_n)
+{
+  int r = idx % fft_n;
+  if(r < 0)
+    r += fft_n;
+  return r;
+}
+
 // Spectrum analysis thread
 int demod_spectrum(void *arg){
   struct channel * const chan = arg;
@@ -267,13 +284,10 @@ static void narrowband_poll(struct channel *chan){
 	rp -= ring_size;
     }
     fftwf_execute_dft(plan,fft_in,fft_out);
-    // DC to Nyquist-1, then -Nyquist to -1
-    int fr = 0;
     for(int i=0; i < bin_count; i++){
-      if(i == bin_count/2)
-	fr = fft_n - i; // skip over excess FFT bins at edges
+      int const fr = spectrum_base_fft_index(i, fft_n, bin_count);
       assert(fr >= 0 && fr < fft_n);
-      double const p = cnrm((double complex)fft_out[fr++]); // use double for improved accuracy when summing?
+      double const p = cnrm((double complex)fft_out[fr]); // use double for improved accuracy when summing?
       assert(isfinite(p));
       if(isfinite(p))
 	bin_data[i] += gain * p; // Don't pollute with infinities or NANs
@@ -392,15 +406,14 @@ static void wideband_poll(struct channel *chan){
       }
       fftwf_execute_dft_r2c(plan,fft_in,fft_out);
 
-      // Spectrum is always right side up so shift is never negative
-      // Start with DC + positive frequencies, then wrap to negative
-      int binp = shift;
-      assert(binp >= 0);
-      for(int i=0;i < bin_count && binp < fft_n/2+1 ; i++,binp++){
-	if(i == bin_count/2)
-	  binp -= bin_count; // crossed into negative output rang, Wrap input back to lowest frequency requested
-
-	double const p = cnrm(fft_out[binp]);
+      // Same DC / positive / negative layout as narrowband; map through r2c Hermitian symmetry.
+      assert(shift >= 0);
+      for(int i=0; i < bin_count; i++){
+	int const idx = wrap_fft_index(
+		spectrum_base_fft_index(i, fft_n, bin_count) + shift, fft_n);
+	int const k = (idx <= fft_n / 2) ? idx : (fft_n - idx);
+	assert(k >= 0 && k <= fft_n / 2);
+	double const p = cnrm(fft_out[k]);
 	assert(isfinite(p));
 	if(isfinite(p))
 	  bin_data[i] += gain * p;
@@ -413,8 +426,6 @@ static void wideband_poll(struct channel *chan){
     fftwf_free(fft_out);
   } else {
     // Complex front end (frontend->isreal == false)
-    // Find starting points to read in input A/D stream
-    // UNTESTED
     float complex const * restrict input = frontend->in.input_write_pointer.c - fft_n; // 1 buffer back
     input += (input < (float complex *)frontend->in.input_buffer) ? frontend->in.input_buffer_size / sizeof *input : 0; // backward wrap
     float complex * restrict fft_in = fftwf_alloc_complex(fft_n);
@@ -430,40 +441,15 @@ static void wideband_poll(struct channel *chan){
 
       fftwf_execute_dft(plan,fft_in,fft_out);
 
-      // Copy requested bins to user, starting with requested frequency
-      int binp;
-      int i = 0;
-
-      if(shift >= 0){
-	// Starts in positive spectrum
-	if(shift >= fft_n/2) // starts past end of spectrum, nothing to return
-	  goto done;
-	binp = shift;
-      } else {
-	// shift < 0, starts in negative spectrum
-	if(-shift >= fft_n)
-	  goto done; // Nothing overlaps, quit
-	if(-shift >= fft_n/2){ // before start of input spectrum
-	  i = -shift - fft_n/2;
-	  binp = fft_n/2; // start input at lowest negative frequency
-	} else {
-	  binp = fft_n + shift;
-	}
-      }
-      do {
-	assert(binp >= 0 && binp < fft_n && i >= 0 && i < bin_count);
-	double const p = cnrm(fft_out[binp]);
+      for(int i=0; i < bin_count; i++){
+	int const idx = wrap_fft_index(
+		spectrum_base_fft_index(i, fft_n, bin_count) + shift, fft_n);
+	assert(idx >= 0 && idx < fft_n);
+	double const p = cnrm(fft_out[idx]);
 	assert(isfinite(p));
 	if(isfinite(p))
 	  bin_data[i] += gain * p;
-
-	// Increment and wrap indices
-	if(++i == bin_count)
-	  i = 0; // wrap to DC
-	if(++binp == fft_n)
-	  binp = 0; // wrap to DC
-      } while(i != bin_count/2 && binp != fft_n/2); // upper ends of positive frequncies
-    done:;
+      }
 
       // Back to previous buffer
       input -= lrint(fft_n * (1. - chan->spectrum.overlap));
@@ -614,6 +600,7 @@ static void setup_narrowband(struct channel *chan){
   double const margin = 400; // Allow 400 Hz for filter skirts at edge of I/Q receiver - calculate this
   unsigned long const samprate_base = lcm(lrint(blockrate),lrint(L*blockrate/N)); // Samprate must be allowed by receiver
   chan->spectrum.fft_n = lrint(chan->spectrum.bin_count + margin / chan->spectrum.rbw); // Minimum for search to avoid receiver filter skirt
+  assert(chan->spectrum.fft_n > 0);
   // This (int) cast should be cleaned up
   while(chan->spectrum.fft_n < 65536 && (!goodchoice(chan->spectrum.fft_n) || lrint(chan->spectrum.fft_n * chan->spectrum.rbw) % samprate_base != 0))
     chan->spectrum.fft_n++;
